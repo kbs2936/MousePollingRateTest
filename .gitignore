@@ -1,3 +1,10 @@
+# Ignorar archivos compilados
+dist/
+build/
+__pycache__/
+*.exe
+*.spec
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
