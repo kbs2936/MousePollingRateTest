@@ -9,6 +9,9 @@ last_time = None
 polling_rates = deque(maxlen=10)  # 存储最近10次测量
 accumulated_rates = []  # 在计算平均值前累积测量数据
 max_polling_rate = 0
+min_polling_rate = 0
+avg_polling_rate = 0
+total_count = 0
 is_measuring = False
 is_dynamic = False
 listener = None
@@ -16,43 +19,55 @@ last_polling_rate = None  # 用于比较轮询率的变化
 
 # 鼠标移动时触发的函数
 def on_move(x, y):
-    global last_time, polling_rates, accumulated_rates, max_polling_rate, is_dynamic, last_polling_rate
+    global last_time, polling_rates, accumulated_rates, max_polling_rate, is_dynamic, last_polling_rate, min_polling_rate, avg_polling_rate, total_count
 
     current_time = time.perf_counter()
 
     if last_time is not None:
         delta_time = current_time - last_time
 
-        if delta_time > 0.001:  # 忽略时间间隔小于1毫秒的事件
+        if delta_time > 0.000001:  # 忽略时间间隔小于1微秒的事件
             polling_rate = 1 / delta_time
             polling_rate = min(polling_rate, 8000)  # 现代鼠标上限设为8000Hz
 
             # 累积测量值
-            accumulated_rates.append(polling_rate)
+            # accumulated_rates.append(polling_rate)
+            avg_polling_rate += polling_rate
+            total_count += 1
 
-            # 每累积10次测量值进行一次平均计算
-            if len(accumulated_rates) >= 10:
-                avg_polling_rate = sum(accumulated_rates) / len(accumulated_rates)
-                accumulated_rates.clear()  # 清空累积数据
+            # 每累积1000次测量值进行一次平均计算
+            # if len(accumulated_rates) >= 1000:
+            if total_count % 1000 == 0:
+                # avg_polling_rate = sum(accumulated_rates) / len(accumulated_rates)
+                # accumulated_rates.clear()  # 清空累积数据
 
-                polling_rates.append(avg_polling_rate)
+                # polling_rates.append(avg_polling_rate)
+
+                avg = avg_polling_rate / total_count
 
                 # 更新界面
-                if avg_polling_rate > max_polling_rate:
-                    max_polling_rate = avg_polling_rate
-                    max_polling_label.config(text=f"最高记录：{max_polling_rate:.2f} Hz")
+                if avg > max_polling_rate:
+                    max_polling_rate = avg
+                    max_polling_label.config(text=f"最高记录：{max_polling_rate:.0f} Hz")
 
-                polling_rate_label.config(text=f"平均轮询率：{avg_polling_rate:.2f} Hz")
+                if min_polling_rate == 0:
+                    min_polling_rate = avg
+                    dynamic_label.config(text=f"最低记录：{min_polling_rate:.0f} Hz")
+                elif avg < min_polling_rate:
+                    min_polling_rate = avg
+                    dynamic_label.config(text=f"最低记录：{min_polling_rate:.0f} Hz")
+
+                polling_rate_label.config(text=f"平均轮询率：{avg:.0f} Hz")
 
                 # 检测是否为动态轮询率
-                if len(set([round(rate) for rate in polling_rates])) > 2:
-                    is_dynamic = True
-                else:
-                    is_dynamic = False
-                dynamic_label.config(text=f"动态轮询率：{'是' if is_dynamic else '否'}")
+                # if len(set([round(rate) for rate in polling_rates])) > 2:
+                #     is_dynamic = True
+                # else:
+                #     is_dynamic = False
+                # dynamic_label.config(text=f"动态轮询率：{'是' if is_dynamic else '否'}")
 
                 # 更新轮询率列表
-                update_polling_rate_list()
+                # update_polling_rate_list()
 
     last_time = current_time
 
@@ -64,15 +79,18 @@ def update_polling_rate_list():
 
 # 启动/停止测量的函数
 def toggle_measurement():
-    global listener, is_measuring, max_polling_rate, polling_rates, accumulated_rates, is_dynamic
+    global listener, is_measuring, max_polling_rate, polling_rates, accumulated_rates, is_dynamic, min_polling_rate, avg_polling_rate, total_count
 
     if not is_measuring:
         is_measuring = True
         start_button.config(text="停止测量")
         polling_rate_label.config(text="移动鼠标中...")
-        max_polling_label.config(text="最高记录：0.00 Hz")
-        dynamic_label.config(text="动态轮询率：未检测到")
+        max_polling_label.config(text="最高记录：0 Hz")
+        dynamic_label.config(text="最低记录：0 Hz")
         max_polling_rate = 0
+        min_polling_rate = 0
+        avg_polling_rate = 0
+        total_count = 0
         polling_rates.clear()
         accumulated_rates.clear()
         is_dynamic = False
@@ -82,7 +100,9 @@ def toggle_measurement():
     else:
         is_measuring = False
         start_button.config(text="开始测量")
-        polling_rate_label.config(text="测量已停止")
+        # polling_rate_label.config(text="测量已停止")
+        if max_polling_rate == 0:
+            polling_rate_label.config(text="点击 '开始测量'/空格 以启动")
 
         if listener:
             listener.stop()
@@ -95,10 +115,18 @@ def close_app():
         listener.stop()
     root.destroy()
 
+
+# 键盘按键按下函数,按下空格开始/停止测试
+def key_pressed(event):
+    if (event.keysym == "space"):
+        toggle_measurement()
+
+
 # 配置图形界面
 root = tk.Tk()
-root.title("鼠标轮询率测试器")
+root.title("LH - 鼠标轮询率测试器")
 root.geometry("300x400")
+root.resizable(False, False) # 应用移除最大化、最小化按钮
  
 # 修改以下值可调整颜色
 background_color = "#1E1E1E"  # 窗口背景色
@@ -117,19 +145,19 @@ title_label = ttk.Label(
 title_label.pack(pady=10)
 
 polling_rate_label = ttk.Label(
-    root, text="点击'开始测量'以启动",
+    root, text="点击 '开始测量'/空格 以启动",
     font=("Arial", 12), background=background_color, foreground=text_color
 )
 polling_rate_label.pack(pady=10)
 
 max_polling_label = ttk.Label(
-    root, text="最高记录：0.00 Hz",
+    root, text="最高记录：0 Hz",
     font=("Arial", 12), background=background_color, foreground=text_color
 )
 max_polling_label.pack(pady=10)
 
 dynamic_label = ttk.Label(
-    root, text="动态轮询率：未检测到",
+    root, text="最低记录：0 Hz",
     font=("Arial", 12), background=background_color, foreground=text_color
 )
 dynamic_label.pack(pady=10)
@@ -167,6 +195,9 @@ start_button.pack(side=tk.LEFT, padx=5)
 
 exit_button = ttk.Button(button_frame, text="退出", command=close_app, style="Custom.TButton")
 exit_button.pack(side=tk.LEFT, padx=5)
+
+# 绑定所有键盘按键事件,按下空格开始/停止测试
+root.bind("<KeyPress>", key_pressed)
 
 root.protocol("WM_DELETE_WINDOW", close_app)
 root.mainloop()
